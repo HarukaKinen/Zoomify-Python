@@ -37,7 +37,12 @@ def run():
 
         if len(mp) == 1:
             if mp.get("authentication") == "basic":
-                print(f"{mplink} [No Permission]")
+                if Osu.EXPIRES < datetime.now():
+                    print(f"{mplink} [Token Expired]")
+                    Osu.checkToken()
+                    mplink -= 1
+                else:
+                    print(f"{mplink} [No Permission]")
                 continue
             elif mp.get("error") is None:
                 print(f"{mplink} [Didn't Show Up]")

@@ -1,4 +1,5 @@
 import requests
+from datetime import datetime, timedelta
 
 from Config import *
 
@@ -8,13 +9,16 @@ class Osu:
 
     def __init__(self, token):
         self.TOKEN = self.checkToken()
+        self.EXPIRES = datetime.now()
 
     def checkToken(self):
         if self.TOKEN == "":
             return self.getToken()
+        elif self.EXPIRES < datetime.now():
+            return self.getToken()
 
     def getToken(self):
-        return requests.post(
+        r = requests.post(
             "https://osu.ppy.sh/oauth/token",
             data={
                 "client_id": CLIENT_ID,
@@ -22,7 +26,10 @@ class Osu:
                 "grant_type": "client_credentials",
                 "scope": "public",
             }
-        ).json()["access_token"]
+        ).json()
+        self.EXPIRES = datetime.now() + timedelta(seconds=r["expires_in"])
+
+        return r["access_token"]
 
     def getMpInfo(self, mplink):
         return requests.get(f"https://osu.ppy.sh/api/v2/matches/{mplink}",
