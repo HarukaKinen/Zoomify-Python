@@ -14,8 +14,9 @@ class Osu:
     def checkToken(self):
         if self.TOKEN == "":
             return self.getToken()
-        elif self.EXPIRES < datetime.now():
-            return self.getToken()
+        else:
+            if self.EXPIRES < datetime.now():
+                return self.getToken()
 
     def getToken(self):
         r = requests.post(
