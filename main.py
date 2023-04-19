@@ -90,12 +90,21 @@ def sendWebhook(mp):
 
     embed.set_author(name=mp["match"]["name"], url=f'https://osu.ppy.sh/mp/{mp["match"]["id"]}')
 
+    # MAX_FIELD_LENGTH = 1024
     field = ""
     for user in mp["users"]:
         if user["default_group"] != "bot":
-            field += f':flag_{user["country_code"].lower()}: [{user["username"]}](https://osu.ppy.sh/users/{user["id"]})\n'
+            user_field = f':flag_{user["country_code"].lower()}: [{user["username"]}](https://osu.ppy.sh/users/{user["id"]})\n'
+        #     print(len(field))
+        #     if len(field) + len(user_field) > MAX_FIELD_LENGTH:
+        #         embed.add_field(name='', value=field, inline=False)
+        #         field = "" + user_field
+        #     else:
+        #         field += user_field
+        #
+        # embed.add_field(name='', value=field, inline=False)
+            embed.add_field(name='', value=user_field, inline=False)
 
-    embed.add_field(name='Player', value=field)
     embed.set_footer(text=mp["match"]["id"])
 
     hook.send(embed=embed)
