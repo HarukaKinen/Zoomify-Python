@@ -8,15 +8,22 @@ class Osu:
     TOKEN = ""
 
     def __init__(self, token):
-        self.TOKEN = self.checkToken()
         self.EXPIRES = datetime.now()
+        self.TOKEN = None
+        self.checkToken()
 
     def checkToken(self):
-        if self.TOKEN == "":
-            return self.getToken()
+        if self.TOKEN is None:
+            self.TOKEN = self.getToken()
         else:
+            print("Token is not None")
             if self.EXPIRES < datetime.now():
-                return self.getToken()
+                print("Token is expired")
+                self.TOKEN = self.getToken()
+            else:
+                print("Token is not expired")
+
+        return self.TOKEN
 
     def getToken(self):
         r = requests.post(

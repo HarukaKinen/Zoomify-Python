@@ -91,10 +91,18 @@ def sendWebhook(mp):
     embed.set_author(name=mp["match"]["name"], url=f'https://osu.ppy.sh/mp/{mp["match"]["id"]}')
 
     # MAX_FIELD_LENGTH = 1024
-    field = ""
+    ref_field = None
+    if mp["events"][0]["detail"]["type"] == "match-created":
+        ref_id = mp["events"][0]["user_id"]
+    else:
+        ref_id = 0
     for user in mp["users"]:
         if user["default_group"] != "bot":
-            user_field = f':flag_{user["country_code"].lower()}: [{user["username"]}](https://osu.ppy.sh/users/{user["id"]})\n'
+            if user["id"] == ref_id:
+                ref_field = f':flag_{user["country_code"].lower()}: [{user["username"]}](https://osu.ppy.sh/users/{ref_id})'
+            else:
+                user_field = f':flag_{user["country_code"].lower()}: [{user["username"]}](https://osu.ppy.sh/users/{user["id"]})\n'
+                embed.add_field(name='', value=user_field, inline=False)
         #     print(len(field))
         #     if len(field) + len(user_field) > MAX_FIELD_LENGTH:
         #         embed.add_field(name='', value=field, inline=False)
@@ -103,7 +111,8 @@ def sendWebhook(mp):
         #         field += user_field
         #
         # embed.add_field(name='', value=field, inline=False)
-            embed.add_field(name='', value=user_field, inline=False)
+    if ref_field:
+        embed.add_field(name='Referee', value=ref_field, inline=False)
 
     embed.set_footer(text=mp["match"]["id"])
 
