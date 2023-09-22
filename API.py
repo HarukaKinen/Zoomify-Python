@@ -39,8 +39,8 @@ class Osu:
 
         return r["access_token"]
 
-    def getMpInfo(self, mplink):
-        return requests.get(f"https://osu.ppy.sh/api/v2/matches/{mplink}",
+    def getMpInfo(self, mplink, before=""):
+        return requests.get(f"https://osu.ppy.sh/api/v2/matches/{mplink}?before={before}",
                             headers={"Authorization": f"Bearer {self.TOKEN}"}, data={}).json()
 
     def getLobby(self):
