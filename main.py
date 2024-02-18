@@ -1,6 +1,6 @@
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from dhooks import Webhook, Embed
 
@@ -20,12 +20,12 @@ def run():
     mplink = None
 
     try:
-        with open('mplink', 'r') as f:
+        with open("mplink", "r") as f:
             lines = f.read()
         if lines != "":
             mplink = int(lines)
     except FileNotFoundError:
-        with open('mplink', 'w') as f:
+        with open("mplink", "w") as f:
             f.write("")
     except Exception as e:
         hook.send(f"Error: {e}")
@@ -62,12 +62,22 @@ def run():
                 continue
             if mp["match"]["end_time"] is None:
                 while mp["match"]["end_time"] is None:
-                    print(f"{mplink} [Not ended yet]")
-                    time.sleep(60)
-                    mp = Osu.getMpInfo(mplink)
+                    start_time = datetime.strptime(
+                        mp["match"]["start_time"], "%Y-%m-%dT%H:%M:%S%z"
+                    )
+                    if start_time + timedelta(
+                        seconds=86400
+                    ) < datetime.now().astimezone(start_time.tzinfo):
+                        print(f"{mplink} [Inactive Lobby]")
+                        mp = Osu.getMpInfo(mplink)
+                        break
+                    else:
+                        print(f"{mplink} [Not ended yet]")
+                        time.sleep(60)
+                        mp = Osu.getMpInfo(mplink)
             sendWebhook(mp)
 
-        with open('mplink', 'w') as f:
+        with open("mplink", "w") as f:
             f.write(str(mplink))
 
 
@@ -79,15 +89,15 @@ def checkPlayer(mp):
 
 
 def sendWebhook(mp):
-    event_list = mp['events']
-    users_list = mp['users']
-    if mp['events'][0]['id'] != mp['first_event_id']:
-        rsp = Osu.getMpInfo(mp['match']['id'], mp['events'][0]['id'])
-        event_list[:0] = rsp['events']
+    event_list = mp["events"]
+    users_list = mp["users"]
+    if mp["events"][0]["id"] != mp["first_event_id"]:
+        rsp = Osu.getMpInfo(mp["match"]["id"], mp["events"][0]["id"])
+        event_list[:0] = rsp["events"]
 
-        usersid_list = [user['id'] for user in users_list]
-        for user in rsp['users']:
-            if user['id'] not in usersid_list:
+        usersid_list = [user["id"] for user in users_list]
+        for user in rsp["users"]:
+            if user["id"] not in usersid_list:
                 users_list.append(user)
 
     ref_id = 0
@@ -105,15 +115,15 @@ def sendWebhook(mp):
                 red_score = 0
                 blue_score = 0
                 for player in event.get("game").get("scores"):
-                    if player['score'] < 1000:
+                    if player["score"] < 1000:
                         continue
                     user_id = player.get("user_id")
-                    team = 0 if player.get("match")['team'] == 'red' else 1
+                    team = 0 if player.get("match")["team"] == "red" else 1
 
                     if team == 0:
-                        red_score += player['score']
+                        red_score += player["score"]
                     else:
-                        blue_score += player['score']
+                        blue_score += player["score"]
 
                     player_dict[user_id] = team
 
@@ -123,7 +133,7 @@ def sendWebhook(mp):
                     winner = "blue"
             else:
                 for player in event.get("game").get("scores"):
-                    if player['score'] < 1000:
+                    if player["score"] < 1000:
                         continue
                     player_dict[player.get("user_id")] = -1
 
@@ -131,15 +141,21 @@ def sendWebhook(mp):
         return
 
     if match_type != "team-vs":
-        description = f'[{map_played} map(s) played](https://osu.ppy.sh/mp/{mp["match"]["id"]})'
+        description = (
+            f'[{map_played} map(s) played](https://osu.ppy.sh/mp/{mp["match"]["id"]})'
+        )
     else:
         description = f'[{map_played} map(s) played](https://osu.ppy.sh/mp/{mp["match"]["id"]}), Team {winner.capitalize()} Won.'
     embed = Embed(
-        description = description,
-        timestamp = datetime.strptime(mp["match"]["start_time"], "%Y-%m-%dT%H:%M:%S%z").strftime('%Y-%m-%d %H:%M:%S.%f')
+        description=description,
+        timestamp=datetime.strptime(
+            mp["match"]["start_time"], "%Y-%m-%dT%H:%M:%S%z"
+        ).strftime("%Y-%m-%d %H:%M:%S.%f"),
     )
 
-    embed.set_author(name=mp["match"]["name"], url=f'https://osu.ppy.sh/mp/{mp["match"]["id"]}')
+    embed.set_author(
+        name=mp["match"]["name"], url=f'https://osu.ppy.sh/mp/{mp["match"]["id"]}'
+    )
 
     # MAX_FIELD_LENGTH = 1024
     red_field = ""
@@ -148,12 +164,12 @@ def sendWebhook(mp):
     ref_field = ""
     for user in users_list:
         if user["default_group"] != "bot":
-            if player_dict.get(user['id']) == -1:
+            if player_dict.get(user["id"]) == -1:
                 h2h_field += f':flag_{user["country_code"].lower()}: [{user["username"]}](https://osu.ppy.sh/users/{user["id"]})\n'
             else:
-                if player_dict.get(user['id']) == 0:
+                if player_dict.get(user["id"]) == 0:
                     red_field += f':flag_{user["country_code"].lower()}: [{user["username"]}](https://osu.ppy.sh/users/{user["id"]})\n'
-                elif player_dict.get(user['id']) == 1:
+                elif player_dict.get(user["id"]) == 1:
                     blue_field += f':flag_{user["country_code"].lower()}: [{user["username"]}](https://osu.ppy.sh/users/{user["id"]})\n'
 
         if user["id"] == ref_id:
@@ -171,27 +187,29 @@ def sendWebhook(mp):
         if len(h2h_field) > 1024:
             player_count = len(h2h_field.split("\n"))
             h2h_field = f"{player_count} players in Lobby\n"
-        embed.add_field(name=':white_circle: Head To Head', value=h2h_field, inline=False)
+        embed.add_field(
+            name=":white_circle: Head To Head", value=h2h_field, inline=False
+        )
     if red_field != "":
         if len(red_field) > 1024:
             player_count = len(red_field.split("\n"))
             red_field = f"{player_count} players in Team Red\n"
-        embed.add_field(name=':red_circle: Team Red', value=red_field, inline=False)
+        embed.add_field(name=":red_circle: Team Red", value=red_field, inline=False)
     if blue_field != "":
         if len(blue_field) > 1024:
             player_count = len(blue_field.split("\n"))
             blue_field = f"{player_count} players in Team Blue\n"
-        embed.add_field(name=':blue_circle: Team Blue', value=blue_field, inline=False)
+        embed.add_field(name=":blue_circle: Team Blue", value=blue_field, inline=False)
 
     if ref_field != "":
-        embed.add_field(name='Referee', value=ref_field, inline=False)
+        embed.add_field(name="Referee", value=ref_field, inline=False)
 
     embed.set_footer(text=mp["match"]["id"])
 
     hook.send(embed=embed)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     while True:
         try:
             run()
