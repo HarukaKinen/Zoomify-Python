@@ -28,7 +28,7 @@ def run():
         with open("mplink", "w") as f:
             f.write("")
     except Exception as e:
-        hook.send(f"Error: {e}")
+        error_log.send(f"Error: {e}")
 
     if mplink is None:
         mplink = Osu.getLobby().get("cursor").get("match_id")
@@ -46,13 +46,18 @@ def run():
                 else:
                     print(f"{mplink} [No Permission]")
                 continue
+            elif mp.get("error") == "Specified LegacyMatch\\LegacyMatch couldn't be found.":
+                print(f"{mplink} [Didn't Show Up]")
+                mplink -= 1
+                time.sleep(60)
+                continue
             elif mp.get("error") is None:
                 print(f"{mplink} [Didn't Show Up]")
                 mplink -= 1
                 time.sleep(60)
                 continue
             else:
-                hook.send(f"{mplink} Error: {mp}")
+                error_log.send(f"{mplink} Error: {mp}")
                 continue
 
         mp_name = mp["match"]["name"]
