@@ -1,5 +1,7 @@
 Config.py
 mplink
+mplink.tmp
+error.log
 
 __pycache__
 .idea

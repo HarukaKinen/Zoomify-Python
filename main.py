@@ -1,13 +1,17 @@
+import os
 import re
 import time
-from datetime import datetime, timedelta, timezone
+import traceback
+from datetime import datetime, timedelta
 
 from dhooks import Webhook, Embed
 
-from API import Osu
+from API import Osu as OsuClient
 from Config import WEBHOOK, ERROR_LOG
 
-Osu = Osu("")
+# Initialise inside run(), so a temporary OAuth/network failure at startup is
+# handled by the outer restart loop instead of terminating the process.
+Osu = None
 
 hook = Webhook(WEBHOOK)
 
@@ -16,19 +20,57 @@ error_log = Webhook(ERROR_LOG)
 regex = r"^[^\n:]+:\s*\([^()\n]+\)\s*[vV][sS]\s*\([^()\n]+\)$"
 
 
-def run():
-    mplink = None
+def report_error(message):
+    """Report an error without allowing the reporter itself to stop the process."""
+    timestamp = datetime.now().astimezone().isoformat(timespec="seconds")
+    log_message = f"[{timestamp}] {message}"
+
+    print(log_message, flush=True)
+    try:
+        with open("error.log", "a", encoding="utf-8") as f:
+            f.write(log_message + "\n")
+    except Exception:
+        print("Failed to write error.log", flush=True)
+        traceback.print_exc()
 
     try:
-        with open("mplink", "r") as f:
-            lines = f.read()
-        if lines != "":
-            mplink = int(lines)
+        # Discord messages are limited to 2000 characters.
+        error_log.send(log_message[-1900:])
+    except Exception:
+        print("Failed to send error webhook", flush=True)
+        traceback.print_exc()
+
+
+def read_mplink():
+    try:
+        with open("mplink", "r", encoding="utf-8") as f:
+            value = f.read().strip()
+        return int(value) if value else None
     except FileNotFoundError:
-        with open("mplink", "w") as f:
-            f.write("")
-    except Exception as e:
-        error_log.send(f"Error: {e}")
+        write_mplink("")
+        return None
+    except Exception:
+        report_error(f"Failed to read mplink; using latest lobby:\n{traceback.format_exc()}")
+        return None
+
+
+def write_mplink(value):
+    """Atomically update the existing mplink state file."""
+    temp_path = "mplink.tmp"
+    with open(temp_path, "w", encoding="utf-8") as f:
+        f.write(str(value))
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(temp_path, "mplink")
+
+
+def run():
+    global Osu
+
+    if Osu is None:
+        Osu = OsuClient("")
+
+    mplink = read_mplink()
 
     if mplink is None:
         mplink = Osu.getLobby().get("cursor").get("match_id")
@@ -57,7 +99,8 @@ def run():
                 time.sleep(60)
                 continue
             else:
-                error_log.send(f"{mplink} Error: {mp}")
+                report_error(f"{mplink} unexpected API response: {mp}")
+                time.sleep(60)
                 continue
 
         mp_name = mp["match"]["name"]
@@ -82,8 +125,7 @@ def run():
                         mp = Osu.getMpInfo(mplink)
             sendWebhook(mp)
 
-        with open("mplink", "w") as f:
-            f.write(str(mplink))
+        write_mplink(mplink)
 
 
 def checkPlayer(mp):
@@ -94,14 +136,17 @@ def checkPlayer(mp):
 
 
 def sendWebhook(mp):
-    event_list = mp["events"]
-    users_list = mp["users"]
-    if mp["events"][0]["id"] != mp["first_event_id"]:
+    event_list = mp.get("events") or []
+    users_list = mp.get("users") or []
+    if not event_list:
+        return
+
+    if event_list[0].get("id") != mp.get("first_event_id"):
         rsp = Osu.getMpInfo(mp["match"]["id"], mp["events"][0]["id"])
-        event_list[:0] = rsp["events"]
+        event_list[:0] = rsp.get("events") or []
 
         usersid_list = [user["id"] for user in users_list]
-        for user in rsp["users"]:
+        for user in rsp.get("users") or []:
             if user["id"] not in usersid_list:
                 users_list.append(user)
 
@@ -110,25 +155,30 @@ def sendWebhook(mp):
     winner = 0
     player_dict = {}
     for event in event_list:
-        if event.get("detail").get("type") == "match-created":
+        detail = event.get("detail") or {}
+        game = event.get("game") or {}
+        if detail.get("type") == "match-created":
             ref_id = event.get("user_id")
-        if event.get("detail").get("type") == "other":
+        if detail.get("type") == "other" and game:
             map_played += 1
-            match_type = event.get("game").get("team_type")
+            match_type = game.get("team_type")
 
             if match_type != "head-to-head":
                 red_score = 0
                 blue_score = 0
-                for player in event.get("game").get("scores"):
-                    if player["score"] < 1000:
+                for player in game.get("scores") or []:
+                    score = player.get("score") or 0
+                    player_match = player.get("match") or {}
+                    team_name = player_match.get("team")
+                    if score < 1000 or team_name not in ("red", "blue"):
                         continue
                     user_id = player.get("user_id")
-                    team = 0 if player.get("match")["team"] == "red" else 1
+                    team = 0 if team_name == "red" else 1
 
                     if team == 0:
-                        red_score += player["score"]
+                        red_score += score
                     else:
-                        blue_score += player["score"]
+                        blue_score += score
 
                     player_dict[user_id] = team
 
@@ -137,8 +187,8 @@ def sendWebhook(mp):
                 else:
                     winner = "blue"
             else:
-                for player in event.get("game").get("scores"):
-                    if player["score"] < 1000:
+                for player in game.get("scores") or []:
+                    if (player.get("score") or 0) < 1000:
                         continue
                     player_dict[player.get("user_id")] = -1
 
@@ -218,11 +268,24 @@ if __name__ == "__main__":
     while True:
         try:
             run()
-        except Exception as e:
-            with open('mplink', 'r') as f:
-                lines = f.read()
-            if lines != "":
-                error_log.send(f"`{lines}` Error: {e}")
-            else:
-                error_log.send(f"Error: {e}")
+        except KeyboardInterrupt:
+            # Keep Ctrl+C and service-manager shutdown usable.
+            raise
+        except BaseException:
+            # This is the last line of defence. Recreate the API client on the
+            # next run in case its token/session state caused the failure.
+            Osu = None
+
+            # Reading the state file and reporting the error are both
+            # protected so neither can kill us.
+            try:
+                with open("mplink", "r", encoding="utf-8") as f:
+                    lines = f.read().strip()
+            except Exception:
+                lines = "unknown"
+
+            report_error(
+                f"mplink={lines or 'empty'} crashed; restarting in 60 seconds:\n"
+                f"{traceback.format_exc()}"
+            )
             time.sleep(60)
