@@ -89,9 +89,9 @@ def run():
                     print(f"{mplink} [No Permission]")
                 continue
             elif mp.get("error") == "Specified LegacyMatch\\LegacyMatch couldn't be found.":
-                print(f"{mplink} [Didn't Show Up]")
-                mplink -= 1
-                time.sleep(60)
+                # osu! uses this response for private/inaccessible legacy matches.
+                # Do not move the cursor back, otherwise the same match is retried forever.
+                print(f"{mplink} [No Permission]")
                 continue
             elif mp.get("error") is None:
                 print(f"{mplink} [Didn't Show Up]")
@@ -106,7 +106,7 @@ def run():
         mp_name = mp["match"]["name"]
         print(mplink, mp_name)
         if re.match(regex, mp_name):
-            if "ETX" in mp_name or "o!mm" in mp_name:
+            if "ETX" in mp_name or "o!mm" in mp_name or "ROMAI" in mp_name:
                 continue
             if mp["match"]["end_time"] is None:
                 while mp["match"]["end_time"] is None:
